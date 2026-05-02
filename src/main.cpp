@@ -28,48 +28,65 @@ unsigned long lastTouch = 0;
 #define TOUCH_DB 200
 
 TFT_eSPI tft = TFT_eSPI();
-TFT_eSprite spr = TFT_eSprite(&tft);
-SPIClass touchSPI(VSPI);
+SPIClass touchSPI(HSPI);
 XPT2046_Touchscreen ts(T_CS, T_IRQ);
 
 #define C_BG TFT_BLACK
 #define C_FLASH TFT_RED
 #define C_NUM TFT_GREEN
 #define C_LBL TFT_LIGHTGREY
-#define C_BTN 0x39C7   // medium-dark grey
+#define C_BTN 0x39C7
 #define C_BTNT TFT_WHITE
 #define C_LINE 0x4208
 
 struct Btn { int16_t x, y, w, h, delta; const char* lbl; };
 const Btn btns[4] = {
-  {  4, 167, 74, 68, -10, "-10" },
-  { 83, 167, 74, 68,  -1,  "-1" },
-  {163, 167, 74, 68,  +1,  "+1" },
-  {242, 167, 74, 68, +10, "+10" },
+    {  4, 167, 74, 68, -10, "-10" },
+    { 83, 167, 74, 68,  -1,  "-1" },
+    {163, 167, 74, 68,  +1,  "+1" },
+    {242, 167, 74, 68, +10, "+10" },
 };
 
+void drawBPMNumber() {
+    tft.fillRect(40, 20, 240, 88, C_BG);
+    tft.setTextDatum(MC_DATUM);
+    tft.setTextColor(C_NUM, C_BG);
+    tft.drawNumber(bpm, 160, 72, 7);
+}
+
+void drawTopArea() {
+    tft.fillRect(0, 0, 320, 157, C_BG);
+    tft.setTextDatum(MC_DATUM);
+    tft.setTextColor(C_NUM, C_BG);
+    tft.drawNumber(bpm, 160, 72, 7);
+    tft.setTextColor(C_LBL, C_BG);
+    tft.drawString("BPM", 160, 128, 4);
+    tft.drawFastHLine(0, 157, 320, C_LINE); //divider
+}
+
 void drawUI(bool flash) {
-    spr.fillSprite(flash ? C_FLASH : C_BG);
-
-    if (!flash) {
-        spr.setTextDatum(MC_DATUM);
-        spr.setTextColor(C_NUM, C_BG);
-        spr.drawNumber(bpm, 160, 72, 7);
-
-        spr.setTextColor(C_LBL, C_BG);
-        spr.drawString("BPM", 160, 128, 4);
-        spr.drawFastHLine(0, 157, 320, C_LINE); //divider
-
-        for (int i = 0; i < 4; i++) {
-            const Btn& b = btns[i];
-            spr.fillRoundRect(b.x, b.y, b.w, b.h, 8, C_BTN);
-            spr.setTextColor(C_BTNT, C_BTN);
-            spr.setTextDatum(MC_DATUM);
-            spr.drawString(b.lbl, b.x + b.w / 2, b.y + b.h / 2, 4);
-        }
+    if (flash) {
+        tft.fillRect(0, 0, 320, 155, C_FLASH);
+        return;
     }
 
-    spr.pushSprite(0, 0);
+    tft.fillScreen(C_BG);
+
+    tft.setTextDatum(MC_DATUM);
+    tft.setTextColor(C_NUM, C_BG);
+    tft.drawNumber(bpm, 160, 72, 7);
+
+    tft.setTextColor(C_LBL, C_BG);
+    tft.drawString("BPM", 160, 128, 4);
+    tft.drawFastHLine(0, 157, 320, C_LINE); //divider
+
+    for (int i = 0; i < 4; i++) {
+        const Btn& b = btns[i];
+        tft.fillRoundRect(b.x, b.y, b.w, b.h, 8, C_BTN);
+        tft.setTextColor(C_BTNT, C_BTN);
+        tft.setTextDatum(MC_DATUM);
+        tft.drawString(b.lbl, b.x + b.w / 2, b.y + b.h / 2, 4);
+    }
 }
 
 void setup() {
@@ -80,14 +97,11 @@ void setup() {
     ledcAttachPin(BUZZER_PIN, BUZZER_CH);
     ledcWrite(BUZZER_CH, 0);
 
-    touchSPI.begin(T_CLK, T_MISO, T_MOSI, T_CS);
+    touchSPI.begin(T_CLK, T_MISO, T_MOSI, -1);
     ts.begin(touchSPI);
-    ts.setRotation(0);
-
+    ts.setRotation(1);
     tft.init();
     tft.setRotation(1);
-    tft.fillScreen(C_BG);
-    spr.createSprite(320, 240);
     drawUI(false);
     lastBeat = millis();
 }
@@ -95,7 +109,7 @@ void setup() {
 void loop() {
     unsigned long now = millis();
     unsigned long interval = 60000UL / (unsigned long)bpm;
-    
+
     if (now - lastBeat >= interval) {
         lastBeat += interval;
         ledcWrite(BUZZER_CH, 128);
@@ -113,18 +127,20 @@ void loop() {
     }
     if (flashing && now >= flashEnd) {
         flashing = false;
-        drawUI(false);
+        drawTopArea();
     }
 
     if (now - lastTouch >= TOUCH_DB && ts.tirqTouched() && ts.touched()) {
         TS_Point p = ts.getPoint();
+        Serial.printf("raw x=%d  y=%d\n", p.x, p.y);
         int tx = map(p.x, 200, 3700, 0, 320);
         int ty = map(p.y, 240, 3800, 0, 240);
+        Serial.printf("mapped tx=%d  ty=%d\n", tx, ty);
         for (int i = 0; i < 4; i++) {
             const Btn& b = btns[i];
             if (tx >= b.x && tx < b.x + b.w && ty >= b.y && ty < b.y + b.h) {
                 bpm = constrain(bpm + b.delta, BPM_MIN, BPM_MAX);
-                if (!flashing) drawUI(false);
+                if (!flashing) drawBPMNumber();
                 lastTouch = now;
                 break;
             }

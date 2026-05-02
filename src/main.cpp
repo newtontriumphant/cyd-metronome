@@ -3,7 +3,7 @@
 #include <TFT_eSPI.h>
 #include <XPT2046_Touchscreen.h>
 
-#define BUZZER_PIN 26
+#define BUZZER_PIN 27
 #define BUZZER_CH 0
 #define BEEP_FREQ 1000
 #define BEEP_MS 200
@@ -22,7 +22,8 @@ unsigned long beepEnd = 0;
 unsigned long flashEnd = 0;
 bool beeping = false;
 bool flashing = false;
-#define FLASH_MS 60
+bool running = true;
+#define FLASH_MS 100
 
 unsigned long lastTouch = 0;
 #define TOUCH_DB 200
@@ -51,16 +52,18 @@ void drawBPMNumber() {
     tft.fillRect(40, 20, 240, 88, C_BG);
     tft.setTextDatum(MC_DATUM);
     tft.setTextColor(C_NUM, C_BG);
+    tft.setTextPadding(tft.textWidth("000", 7));
     tft.drawNumber(bpm, 160, 72, 7);
 }
 
 void drawTopArea() {
     tft.fillRect(0, 0, 320, 157, C_BG);
     tft.setTextDatum(MC_DATUM);
-    tft.setTextColor(C_NUM, C_BG);
+    tft.setTextColor(running ? C_NUM : TFT_DARKGREY, C_BG);
+    tft.setTextPadding(tft.textWidth("000", 7));
     tft.drawNumber(bpm, 160, 72, 7);
     tft.setTextColor(C_LBL, C_BG);
-    tft.drawString("BPM", 160, 128, 4);
+    tft.drawString(running ? "BPM" : "PAUSED", 160, 128, 4);
     tft.drawFastHLine(0, 157, 320, C_LINE); //divider
 }
 
@@ -93,9 +96,7 @@ void setup() {
     Serial.begin(115200);
     pinMode(21, OUTPUT);
     digitalWrite(21, HIGH);
-    ledcSetup(BUZZER_CH, BEEP_FREQ, 8);
-    ledcAttachPin(BUZZER_PIN, BUZZER_CH);
-    ledcWrite(BUZZER_CH, 0);
+    pinMode(BUZZER_PIN, OUTPUT);
 
     touchSPI.begin(T_CLK, T_MISO, T_MOSI, -1);
     ts.begin(touchSPI);
@@ -110,9 +111,9 @@ void loop() {
     unsigned long now = millis();
     unsigned long interval = 60000UL / (unsigned long)bpm;
 
-    if (now - lastBeat >= interval) {
+    if (running && now - lastBeat >= interval) {
         lastBeat += interval;
-        ledcWrite(BUZZER_CH, 128);
+        digitalWrite(BUZZER_PIN, HIGH);
         beepEnd = now + BEEP_MS;
         beeping = true;
 
@@ -122,7 +123,7 @@ void loop() {
     }
 
     if (beeping && now >= beepEnd) {
-        ledcWrite(BUZZER_CH, 0);
+        digitalWrite(BUZZER_PIN, LOW);
         beeping = false;
     }
     if (flashing && now >= flashEnd) {
@@ -132,17 +133,23 @@ void loop() {
 
     if (now - lastTouch >= TOUCH_DB && ts.tirqTouched() && ts.touched()) {
         TS_Point p = ts.getPoint();
-        Serial.printf("raw x=%d  y=%d\n", p.x, p.y);
         int tx = map(p.x, 200, 3700, 0, 320);
         int ty = map(p.y, 240, 3800, 0, 240);
-        Serial.printf("mapped tx=%d  ty=%d\n", tx, ty);
-        for (int i = 0; i < 4; i++) {
-            const Btn& b = btns[i];
-            if (tx >= b.x && tx < b.x + b.w && ty >= b.y && ty < b.y + b.h) {
-                bpm = constrain(bpm + b.delta, BPM_MIN, BPM_MAX);
-                if (!flashing) drawBPMNumber();
-                lastTouch = now;
-                break;
+
+        if (ty < 157) {
+            running = !running;
+            if (running) lastBeat = millis();
+            drawTopArea();
+            lastTouch = now;
+        } else {
+            for (int i = 0; i < 4; i++) {
+                const Btn& b = btns[i];
+                if (tx >= b.x && tx < b.x + b.w && ty >= b.y && ty < b.y + b.h) {
+                    bpm = constrain(bpm + b.delta, BPM_MIN, BPM_MAX);
+                    if (!flashing) drawBPMNumber();
+                    lastTouch = now;
+                    break;
+                }
             }
         }
     }

@@ -48,7 +48,7 @@ const Btn btns[4] = {
   {242, 167, 74, 68, +10, "+10" },
 };
 
-void drawUI(bool, flash) {
+void drawUI(bool flash) {
     spr.fillSprite(flash ? C_FLASH : C_BG);
 
     if (!flash) {
@@ -74,6 +74,8 @@ void drawUI(bool, flash) {
 
 void setup() {
     Serial.begin(115200);
+    pinMode(21, OUTPUT);
+    digitalWrite(21, HIGH);
     ledcSetup(BUZZER_CH, BEEP_FREQ, 8);
     ledcAttachPin(BUZZER_PIN, BUZZER_CH);
     ledcWrite(BUZZER_CH, 0);
@@ -90,4 +92,42 @@ void setup() {
     lastBeat = millis();
 }
 
-void loop() {}
+void loop() {
+    unsigned long now = millis();
+    unsigned long interval = 60000UL / (unsigned long)bpm;
+    
+    if (now - lastBeat >= interval) {
+        lastBeat += interval;
+        ledcWrite(BUZZER_CH, 128);
+        beepEnd = now + BEEP_MS;
+        beeping = true;
+
+        flashing = true;
+        flashEnd = now + FLASH_MS;
+        drawUI(true);
+    }
+
+    if (beeping && now >= beepEnd) {
+        ledcWrite(BUZZER_CH, 0);
+        beeping = false;
+    }
+    if (flashing && now >= flashEnd) {
+        flashing = false;
+        drawUI(false);
+    }
+
+    if (now - lastTouch >= TOUCH_DB && ts.tirqTouched() && ts.touched()) {
+        TS_Point p = ts.getPoint();
+        int tx = map(p.x, 200, 3700, 0, 320);
+        int ty = map(p.y, 240, 3800, 0, 240);
+        for (int i = 0; i < 4; i++) {
+            const Btn& b = btns[i];
+            if (tx >= b.x && tx < b.x + b.w && ty >= b.y && ty < b.y + b.h) {
+                bpm = constrain(bpm + b.delta, BPM_MIN, BPM_MAX);
+                if (!flashing) drawUI(false);
+                lastTouch = now;
+                break;
+            }
+        }
+    }
+}

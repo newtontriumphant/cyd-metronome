@@ -6,12 +6,14 @@
 #define TUNER_DOUBLE_TAP_MS 350
 static unsigned long tunerLastTouch = 0;
 
-#define MIC_PIN 34
+#define MIC_PIN 27
 #define SAMPLES 512
 #define SAMPLE_RATE 8000
-#define NOISE_THRESH 80
+#define NOISE_THRESH 20
 
 static bool micOk = false;
+static char lastNote[8] = "";
+static int lastCentsPx = 999;
 
 static bool checkMic() {
     analogSetPinAttenuation(MIC_PIN, ADC_11db);
@@ -34,32 +36,40 @@ float freqToMidi(float f) { return 12.0f * log2f(f / 440.0f) + 69.0f; }
 float midiToFreq(int m) { return 440.0f * powf(2.0f, (m - 69.0f) / 12.0f); }
 
 static void drawResult(float freq, float cents, const char* note, int octave) {
-    tft.fillRect(0, 26, 320, 191, TFT_BLACK);
     char buf[8];
     sprintf(buf, "%s%d", note, octave);
-    tft.setTextDatum(MC_DATUM);
-    tft.setTextPadding(tft.textWidth("B#0", 7));
-    tft.setTextColor(TFT_WHITE, TFT_BLACK);
-    tft.drawString(buf, 160, 80, 7);
-    tft.setTextPadding(0);
 
-    char freqBuf[20];
-    sprintf(freqBuf, "%.1f Hz", freq);
-    tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
-    tft.drawString(freqBuf, 160, 128, 4);
+    if (strcmp(buf, lastNote) != 0) {
+        tft.fillRect(0, 26, 320, 115, TFT_BLACK);
+        tft.setTextSize(3);
+        tft.setTextDatum(MC_DATUM);
+        tft.setTextColor(TFT_WHITE, TFT_BLACK);
+        tft.setTextPadding(tft.textWidth("B#0", 2) * 3);
+        tft.drawString(buf, 160, 80, 2);
+        tft.setTextPadding(0);
+        tft.setTextSize(1);
+        char freqBuf[20];
+        sprintf(freqBuf, "%.1f Hz", freq);
+        tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
+        tft.drawString(freqBuf, 160, 128, 4);
+        strcpy(lastNote, buf);
+    }
 
-    int barY = 150;
-    tft.fillRect(60, barY, 200, 18, 0x1082);
-    tft.drawFastVLine(160, barY - 4, 26, TFT_DARKGREY);
-    uint16_t col = (abs(cents) < 5) ? TFT_GREEN : (abs(cents) < 15) ? TFT_YELLOW : TFT_RED;
     int px = constrain((int)(cents * 2.0f), -100, 100);
-    if (px > 0) tft.fillRect(160, barY + 2, px, 14, col);
-    else if (px < 0) tft.fillRect(160 + px, barY + 2, -px, 14, col);
-
-    char centsBuf[10];
-    sprintf(centsBuf, "%+.0f cents", cents);
-    tft.setTextColor(col, TFT_BLACK);
-    tft.drawString(centsBuf, 160, 185, 2);
+    if (abs(px - lastCentsPx) > 2) {
+        int barY = 150;
+        tft.fillRect(60, barY, 200, 18, 0x1082);
+        tft.drawFastVLine(160, barY - 4, 26, TFT_DARKGREY);
+        uint16_t col = (abs(cents) < 5) ? TFT_GREEN : (abs(cents) < 15) ? TFT_YELLOW : TFT_RED;
+        if (px > 0) tft.fillRect(160, barY + 2, px,  14, col);
+        else if (px < 0) tft.fillRect(160 + px, barY + 2, -px, 14, col);
+        tft.fillRect(60, 178, 200, 18, TFT_BLACK);
+        char centsBuf[10];
+        sprintf(centsBuf, "%+.0f cents", cents);
+        tft.setTextColor(col, TFT_BLACK);
+        tft.drawString(centsBuf, 160, 185, 2);
+        lastCentsPx = px;
+    }
 }
 
 static void drawListening() {
@@ -91,7 +101,8 @@ void tunerDraw() {
     tft.drawFastHLine(0, 25, 320, 0x2104);
     tft.drawFastHLine(0, 218, 320, 0x2104);
     micOk = checkMic();
-    analogSetPinAttenuation(MIC_PIN, ADC_11db);
+    lastNote[0] = '\0';
+    lastCentsPx = 999;
     if (micOk) drawListening();
     else drawNoMic();
 }
@@ -118,15 +129,29 @@ void tunerLoop() {
     }
 
     double peak = 0;
-    for (int i = 0; i < SAMPLES; i++) if (abs(vReal[i]) > peak) peak = abs(vReal[i]);
-    if (peak < NOISE_THRESH) { drawListening(); return; }
+    for (int i = 0; i < SAMPLES; i++) if (fabs(vReal[i]) > peak) peak = fabs(vReal[i]);
+    if (peak < NOISE_THRESH) { if (lastNote[0] != '\0') { drawListening(); lastNote[0] = '\0'; lastCentsPx = 999; } return; }
 
     FFT.windowing(FFTWindow::Hamming, FFTDirection::Forward);
     FFT.compute(FFTDirection::Forward);
     FFT.complexToMagnitude();
 
-    double peakFreq = FFT.majorPeak();
-    if (peakFreq < 50 || peakFreq > 2000) { drawListening(); return; }
+    double peakFreq = 0;
+    double peakMag = 0;
+    int minBin = (int)(50.0 * SAMPLES / SAMPLE_RATE); // should ignore f < 50Hz
+    int maxBin = (int)(2000.0 * SAMPLES / SAMPLE_RATE); // and > 2khz
+    for (int i = minBin; i < maxBin; i++) {
+        if (vReal[i] > peakMag) {
+            peakMag = vReal[i];
+            peakFreq = (double)i * SAMPLE_RATE / SAMPLES;
+        }
+    }
+    int halfBin = (int)(peakFreq / 2.0 * SAMPLES / SAMPLE_RATE);
+    if (halfBin >= minBin && vReal[halfBin] > peakMag * 0.2) {
+        peakFreq = peakFreq / 2.0;
+    }
+
+    if (peakFreq < 50 || peakFreq > 2000) { if (lastNote[0] != '\0') { drawListening(); lastNote[0] = '\0'; lastCentsPx = 999; } return; }
     float midi = freqToMidi((float)peakFreq);
     int midiNote = (int)round(midi);
     int noteIdx = ((midiNote % 12) + 12) % 12;

@@ -9,7 +9,7 @@ Mode currentMode = METRONOME;
 unsigned long lastTapTime = 0;
 #define DOUBLE_TAP_MS 350
 
-#define BUZZER_PIN 27
+#define BUZZER_PIN 22
 #define BUZZER_CH 0
 #define BEEP_FREQ 1000
 #define BEEP_MS 200

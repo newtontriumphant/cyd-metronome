@@ -71,6 +71,9 @@ void drawTopArea() {
     tft.setTextColor(C_LBL, C_BG);
     tft.drawString(running ? "BPM" : "PAUSED", 160, 128, 4);
     tft.drawFastHLine(0, 157, 320, C_LINE); //divider
+    tft.setTextDatum(MC_DATUM);
+    tft.setTextColor(TFT_DARKGREY, TFT_BLACK);
+    tft.drawString("double-tap for tuner!", 160, 14, 1);
 }
 
 void drawUI(bool flash) {

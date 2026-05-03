@@ -3,7 +3,8 @@
 #include <TFT_eSPI.h>
 #include <XPT2046_Touchscreen.h>
 #include "tuner.h"
-enum Mode { METRONOME, TUNER };
+#include "globals.h"
+
 Mode currentMode = METRONOME;
 unsigned long lastTapTime = 0;
 #define DOUBLE_TAP_MS 350
@@ -77,7 +78,8 @@ void drawUI(bool flash) {
         tft.fillRect(0, 0, 320, 155, C_FLASH);
         return;
     }
-
+    
+    tft.setTextPadding(0);
     tft.fillScreen(C_BG);
 
     tft.setTextDatum(MC_DATUM);
@@ -113,7 +115,21 @@ void setup() {
 }
 
 void loop() {
-    if (currentMode == TUNER) { tunerLoop(); return; }
+    if (currentMode == TUNER) {
+        tunerLoop();
+
+        if (currentMode == METRONOME) {
+            flashing = false;
+            beeping = false;
+            digitalWrite(BUZZER_PIN, LOW);
+            running = true;
+            lastBeat = millis();
+            drawUI(false);
+        }
+
+        return;
+    }
+
     unsigned long now = millis();
     unsigned long interval = 60000UL / (unsigned long)bpm;
 

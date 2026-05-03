@@ -1,6 +1,10 @@
 #include "globals.h"
 #include "tuner.h"
 
+#define TUNER_TOUCH_DB 200
+#define TUNER_DOUBLE_TAP_MS 350
+static unsigned long tunerLastTouch = 0;
+
 void tunerDraw() {
     tft.fillScreen(TFT_BLACK);
     tft.setTextDatum(MC_DATUM);
@@ -11,5 +15,14 @@ void tunerDraw() {
 }
 
 void tunerLoop() {
-    // placeholder for now
+    unsigned long now = millis();
+    if (now - tunerLastTouch >= TUNER_TOUCH_DB && ts.tirqTouched() && ts.touched()) {
+        if (now - lastTapTime < TUNER_DOUBLE_TAP_MS) {
+            currentMode = METRONOME;
+            lastTapTime = 0;
+        } else {
+            lastTapTime = now;
+        }
+        tunerLastTouch = now;
+    }
 }

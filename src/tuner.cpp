@@ -11,6 +11,20 @@ static unsigned long tunerLastTouch = 0;
 #define SAMPLE_RATE 8000
 #define NOISE_THRESH 80
 
+static bool micOk = false;
+
+static bool checkMic() {
+    analogSetPinAttenuation(MIC_PIN, ADC_11db);
+    int minVal = 4095, maxVal = 0;
+    for (int i = 0; i < 30; i++) {
+        int v = analogRead(MIC_PIN);
+        if (v < minVal) minVal = v;
+        if (v > maxVal) maxVal = v;
+        delay(1);
+    }
+    return (maxVal - minVal) > 8 || (minVal > 100 && maxVal < 3900); // dc pin returns no variance, c pin returns signal!
+}
+
 double vReal[SAMPLES];
 double vImag[SAMPLES];
 ArduinoFFT<double> FFT = ArduinoFFT<double>(vReal, vImag, SAMPLES, SAMPLE_RATE);
@@ -34,7 +48,7 @@ static void drawResult(float freq, float cents, const char* note, int octave) {
     tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
     tft.drawString(freqBuf, 160, 128, 4);
 
-    int barY = 50;
+    int barY = 150;
     tft.fillRect(60, barY, 200, 18, 0x1082);
     tft.drawFastVLine(160, barY - 4, 26, TFT_DARKGREY);
     uint16_t col = (abs(cents) < 5) ? TFT_GREEN : (abs(cents) < 15) ? TFT_YELLOW : TFT_RED;
@@ -56,6 +70,17 @@ static void drawListening() {
     tft.drawString("listening...", 160, 128, 2);
 }
 
+static void drawNoMic() {
+    tft.fillRect(0, 26, 320, 191, TFT_BLACK);
+    tft.setTextDatum(MC_DATUM);
+    tft.setTextColor(TFT_RED, TFT_BLACK);
+    tft.drawString("NO MIC", 160, 75, 4);
+    tft.setTextColor(TFT_DARKGREY, TFT_BLACK);
+    tft.drawString("Connect AO to GPIO 34", 160, 115, 2);
+    tft.drawString("VCC to 3.3V & GND to GND", 160, 140, 2);
+    tft.drawString("(use a ky-038 module fbr!)", 160, 165, 2);
+}
+
 void tunerDraw() {
     tft.fillScreen(TFT_BLACK);
     tft.setTextDatum(MC_DATUM);
@@ -65,7 +90,10 @@ void tunerDraw() {
     tft.drawString("double-tap to return!", 160, 228, 1);
     tft.drawFastHLine(0, 25, 320, 0x2104);
     tft.drawFastHLine(0, 218, 320, 0x2104);
-    drawListening();
+    micOk = checkMic();
+    analogSetPinAttenuation(MIC_PIN, ADC_11db);
+    if (micOk) drawListening();
+    else drawNoMic();
 }
 
 void tunerLoop() {
@@ -80,7 +108,9 @@ void tunerLoop() {
         tunerLastTouch = now;
         return;
     }
-    analogSetPinAttenuation(MIC_PIN, ADC_11db);
+
+    if (!micOk) return;
+
     for(int i = 0; i < SAMPLES; i++) {
         vReal[i] = analogRead(MIC_PIN) - 2048.0;
         vImag[i] = 0;

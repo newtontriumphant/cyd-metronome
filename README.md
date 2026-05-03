@@ -14,6 +14,18 @@ This was made as an additional example to add to [Hack Club Framebuf](https://fr
 
 cyd-metronome has two modes: **Metronome** and **Tuner**. The Tuner mode pulls from the logic I used in my polyphonic tuner [kanōn](https://kanon-phi.vercel.app/), and condenses it on a simpler level to work on CYD! In Metronome mode, the CYD flashes the screen AND buzzes an attached buzzer to the BPM set on-screen.
 
+# BOM
+
+The only item you technically require for this software is a CYD, but the tuner and sound wont work.
+
+Therefore, for this program to be fully functional, you require:
+
+1x ESP32-CYD, any model works, I used https://www.amazon.com/dp/B0FPLX98VG/.
+1x Generic Active Buzzer, the ones in any electronics kit work, I used https://www.amazon.com/dp/B0CM63HJHQ/.
+1x KY-038 Sound Sensor, I used https://a.co/d/05BV55X7/.
+
+I additionally used a 3D-Printed case in my demo video, its not required for the tuner to function. If you'd like to print one yourself, it can be found at https://makerworld.com/models/1810329/.
+
 # Installation
 
 To use cyd-metronome, compile and build the program and flash it onto your CYD. The easiest way to do this is to clone this repository:

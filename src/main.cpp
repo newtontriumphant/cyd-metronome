@@ -2,6 +2,11 @@
 #include <SPI.h>
 #include <TFT_eSPI.h>
 #include <XPT2046_Touchscreen.h>
+#include "tuner.h"
+enum Mode { METRONOME, TUNER };
+Mode currentMode = METRONOME;
+unsigned long lastTapTime = 0;
+#define DOUBLE_TAP_MS 350
 
 #define BUZZER_PIN 27
 #define BUZZER_CH 0
@@ -108,6 +113,7 @@ void setup() {
 }
 
 void loop() {
+    if (currentMode == TUNER) { tunerLoop(); return; }
     unsigned long now = millis();
     unsigned long interval = 60000UL / (unsigned long)bpm;
 
@@ -136,19 +142,28 @@ void loop() {
         int tx = map(p.x, 200, 3700, 0, 320);
         int ty = map(p.y, 240, 3800, 0, 240);
 
-        if (ty < 157) {
-            running = !running;
-            if (running) lastBeat = millis();
-            drawTopArea();
+        if (now - lastTapTime < DOUBLE_TAP_MS) {
+            currentMode = (currentMode == METRONOME) ? TUNER : METRONOME;
+            if (currentMode == TUNER) tunerDraw();
+            else { running = true; lastBeat = millis(); drawUI(false); }
             lastTouch = now;
+            lastTapTime = 0;
         } else {
-            for (int i = 0; i < 4; i++) {
-                const Btn& b = btns[i];
-                if (tx >= b.x && tx < b.x + b.w && ty >= b.y && ty < b.y + b.h) {
-                    bpm = constrain(bpm + b.delta, BPM_MIN, BPM_MAX);
-                    if (!flashing) drawBPMNumber();
-                    lastTouch = now;
-                    break;
+            lastTapTime = now;
+            if (ty < 157) {
+                running = !running;
+                if (running) lastBeat = millis();
+                drawTopArea();
+                lastTouch = now;
+            } else {
+                for (int i = 0; i < 4; i++) {
+                    const Btn& b = btns[i];
+                    if (tx >= b.x && tx < b.x + b.w && ty >= b.y && ty < b.y + b.h) {
+                        bpm = constrain(bpm + b.delta, BPM_MIN, BPM_MAX);
+                        if (!flashing) drawBPMNumber();
+                        lastTouch = now;
+                        break;
+                    }
                 }
             }
         }
